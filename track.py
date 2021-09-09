@@ -185,9 +185,9 @@ def detect(opt):
   sort_idxs = np.zeros((2,), np.int32)
 
   for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
+    # img = np.array([np.fliplr(img[i]) for i in range(3)])
+
     # Save datetime
-    # image_datetime = datetime.now()
-    # image_datetime = image_datetime.strftime("%d/%m/%Y %H:%M:%S")
     image_datetime = datetime.utcnow().strftime('%d-%m-%Y %H:%M:%S.%f')[:-2]
 
     img = torch.from_numpy(img).to(device)
