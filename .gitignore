@@ -1,1 +1,3 @@
 .vscode/
+database/*
+inference/output/*
