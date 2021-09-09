@@ -25,12 +25,17 @@ from yolov5.utils.datasets import LoadImages, LoadStreams
 palette = (2 ** 11 - 1, 2 ** 15 - 1, 2 ** 20 - 1)
 
 
-def start_database():
-  if not os.path.exists('database'):
-    os.makedirs('database')
+def start_database(destiny):
+  file_timestamp = datetime.utcnow().strftime('%d-%m-%Y[%H-%M-%S]')
+  db_file = f"{file_timestamp}.db"
+  if destiny == 'local':
+    if not os.path.exists('database'):
+      os.makedirs('database')
+    db_path = os.path.join(os.getcwd(), "database", db_file)
+    
+  elif destiny == 'usb':
+    db_path = f"/media/perceptron/DATALOG/database/{db_file}"
 
-  db_file = f"{datetime.utcnow().strftime('%d-%m-%Y|%H:%M:%S')}.db"
-  db_path = os.path.join("database", db_file)
   db_connection = sqlite3.connect(db_path)
   db_cursor = db_connection.cursor()
   db_cursor.execute(
@@ -39,10 +44,14 @@ def start_database():
     class TEXT,
     detections INTEGER, 
     count INTEGER,
-    date TEXT
+    date TEXT,
+    bbox_top INTEGER,
+    bbox_left INTEGER,
+    bbox_w INTEGER,
+    bbox_h INTEGER
     )'''
   )
-  return db_connection, db_cursor
+  return db_connection, db_cursor, file_timestamp
 
 
 def xyxy_to_xywh(*xyxy):
@@ -100,15 +109,18 @@ def draw_boxes(img, bbox, identities=None, offset=(0, 0)):
 
 
 def detect(opt):
-  out, source, weights, save_local_db, show_vid, save_vid, save_txt, imgsz, distance_th = \
-      opt.output, opt.source, opt.weights, opt.save_local_db, opt.show_vid, opt.save_vid, opt.save_txt, opt.img_size, opt.distance
+  out, source, weights, save_local_db, save_data_usb, show_vid, save_vid, save_txt, imgsz, distance_th = \
+      opt.output, opt.source, opt.weights, opt.save_local_db, opt.save_data_usb, opt.show_vid, opt.save_vid, opt.save_txt, opt.img_size, opt.distance
   webcam = source == '0' or source.startswith(
       'rtsp') or source.startswith('http') or source.endswith('.txt')
 
   # initialize db
   # save_local_db = True
   if save_local_db:
-    db_connection, db_cursor = start_database()
+    db_connection, db_cursor, file_timestamp = start_database('local')
+
+  if save_data_usb:
+    db_connection, db_cursor, file_timestamp = start_database('usb')
 
   # initialize deepsort
   cfg = get_config()
@@ -225,7 +237,6 @@ def detect(opt):
         outputs = deepsort.update(xywhs, confss, im0)
 
         tlwh_bboxs = [[]]
-        identities = []
         # draw boxes for visualization
         if len(outputs) > 0:
           bbox_xyxy = outputs[:, :4]
@@ -284,7 +295,7 @@ def detect(opt):
           class_detections = (det[:, -1] == c).sum()  # detections per class
           current_count = Pavos_count if int(c) == 0 else -1
           s += '%g %ss, ' % (class_detections, class_name)  # add to string
-          if save_local_db:
+          if save_local_db or save_data_usb:
             temp_bbox_top = tlwh_bboxs[0][0] if tlwh_bboxs[0] else -1
             temp_bbox_left = tlwh_bboxs[0][1] if tlwh_bboxs[0] else -1
             temp_bbox_w = tlwh_bboxs[0][2] if tlwh_bboxs[0] else -1
@@ -300,8 +311,6 @@ def detect(opt):
             at {image_datetime} in frame {frame_idx}\
             {'s' * (class_detections > 1)}")
         print('Pavos: ', Pavos_count)
-        print(xywh_bboxs)
-        print(tlwh_bboxs)
 
       else:
         deepsort.increment_ages()
@@ -332,6 +341,22 @@ def detect(opt):
           vid_writer = cv2.VideoWriter(
               save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
         vid_writer.write(im0)
+      if save_data_usb:
+        vid_path = f"/media/perceptron/DATALOG/video/{file_timestamp}"
+        save_path = vid_path
+        if isinstance(vid_writer, cv2.VideoWriter):
+          vid_writer.release()  # release previous video writer
+        if vid_cap:  # video
+          fps = vid_cap.get(cv2.CAP_PROP_FPS)
+          w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+          h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        else:  # stream
+          fps, w, h = 30, im0.shape[1], im0.shape[0]
+          save_path += '.mp4'
+
+        vid_writer = cv2.VideoWriter(
+            save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+        vid_writer.write(im0)
 
   if save_txt or save_vid:
     print('Results saved to %s' % os.getcwd() + os.sep + out)
@@ -361,6 +386,8 @@ if __name__ == '__main__':
                       help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
   parser.add_argument('--save-local-db', action='store_true',
                       help='save data in sqlite3 db')
+  parser.add_argument('--save-data-usb', action='store_true',
+                      help='save data in mounted usb')
   parser.add_argument('--show-vid', action='store_true',
                       help='display tracking video results')
   parser.add_argument('--save-vid', action='store_true',
