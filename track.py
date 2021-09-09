@@ -247,38 +247,38 @@ def detect(opt):
 
           # Write MOT compliant results to file
 
-          if save_txt:
-            # print(outputs[-1])
-            for j, (tlwh_bbox, output) in enumerate(zip(tlwh_bboxs, outputs)):
-              bbox_top = tlwh_bbox[0]
-              bbox_left = tlwh_bbox[1]
-              bbox_w = tlwh_bbox[2]
-              bbox_h = tlwh_bbox[3]
-              identity = output[-1]
+          # print(outputs[-1])
+          for j, (tlwh_bbox, output) in enumerate(zip(tlwh_bboxs, outputs)):
+            bbox_top = tlwh_bbox[0]
+            bbox_left = tlwh_bbox[1]
+            bbox_w = tlwh_bbox[2]
+            bbox_h = tlwh_bbox[3]
+            identity = output[-1]
 
-              if j == 0:
-                new_center[0:1] = tlwh_bbox[0:1]
-                if primer_pavo:
-                  last_center[0:1] = tlwh_bbox[0:1]
-                  primer_pavo = False
+            if j == 0:
+              new_center[0:1] = tlwh_bbox[0:1]
+              if primer_pavo:
+                last_center[0:1] = tlwh_bbox[0:1]
+                primer_pavo = False
+              # print(f"Last - new center = {last_center-new_center}")
+              distance = np.linalg.norm(last_center-new_center)
+              #D = np.abs(last_distance - distance)
+              print('Distance', distance)
+              if distance > distance_th:
+                Pavos_count += 1
+                suma_pavo = True
+              if len(tlwh_bboxs) < 2:
+                suma_pavo = False
+              #last_distance =  distance
 
-                distance = np.linalg.norm(last_center-new_center)
-                #D = np.abs(last_distance - distance)
-                print('Distance', distance)
-                if distance > distance_th:
-                  Pavos_count += 1
-                  suma_pavo = True
-                if len(tlwh_bboxs) < 2:
-                  suma_pavo = False
-                #last_distance =  distance
+              last_center[0:1] = new_center[0:1]
 
-                last_center[0:1] = new_center[0:1]
-
+            if save_txt:
               with open(txt_path, 'a') as f:
                 f.write(('%g ' * 10 + '\n') % (
                     frame_idx, identity, bbox_top, bbox_left, bbox_w, bbox_h, -1, -1, -1, -1))  # label format
-            if Pavos_count == 0:
-              Pavos_count += (j+1)
+          if Pavos_count == 0:
+            Pavos_count += (j+1)
 
           # if suma_pavo:
           sort_list = np.zeros(len(tlwh_bboxs))

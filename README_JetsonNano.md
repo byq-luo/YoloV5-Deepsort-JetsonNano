@@ -1,5 +1,10 @@
 # Guía JetsonNano
 
+## Uso ej
+```
+python track.py --source 0 --weights /yolov5/weights/yolov5s_7C.py --distance 40 --save-vid
+```
+
 ## Instalar OpenCV y activar CUDA
 Seguir pasos de QEngineering para OpenCV 4.5.1: https://qengineering.eu/install-opencv-4.5-on-jetson-nano.html
 ```bash
