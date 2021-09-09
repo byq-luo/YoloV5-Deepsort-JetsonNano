@@ -126,7 +126,7 @@ def detect(opt):
     csv_path = f"{Path('/media/perceptron/DATALOG/csv')}/{file_timestamp}.csv"
     with open(csv_path, 'w', encoding='UTF8') as f:
       writer = csv.writer(f)
-      writer.writerow("frame, class, detections, count, datetime\n")
+      writer.writerow(["frame", "class", "detections", "count", "datetime"])
 
   # initialize deepsort
   cfg = get_config()
@@ -315,7 +315,7 @@ def detect(opt):
           if save_data_usb:
             with open(csv_path, 'a', encoding='UTF8') as f:
               writer = csv.writer(f)
-              writer.writerow(f"{frame_idx},{class_name},{class_detections},{current_count},{image_datetime}\n")
+              writer.writerow([frame_idx, class_name, class_detections, current_count, image_datetime])
           print(f"Found {class_detections} {class_name} with count {current_count} \
             at {image_datetime} in frame {frame_idx}\
             {'s' * (class_detections > 1)}")
