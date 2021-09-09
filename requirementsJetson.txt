@@ -1,3 +1,4 @@
 pandas>=1.1.5
 seaborn>=0.11.0
 easydict
+PyYAML==5.4.1

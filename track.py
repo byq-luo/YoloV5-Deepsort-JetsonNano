@@ -120,6 +120,7 @@ def detect(opt):
     db_connection, db_cursor, file_timestamp = start_database('local')
 
   if save_data_usb:
+    out = f"/media/perceptron/DATALOG/video"
     db_connection, db_cursor, file_timestamp = start_database('usb')
 
   # initialize deepsort
@@ -213,7 +214,6 @@ def detect(opt):
 
       s += '%gx%g ' % img.shape[2:]  # print string
       save_path = str(Path(out) / Path(p).name)
-
       if det is not None and len(det):
         # Rescale boxes from img_size to im0 size
         det[:, :4] = scale_coords(
@@ -325,7 +325,7 @@ def detect(opt):
           raise StopIteration
 
       # Save results (image with detections)
-      if save_vid:
+      if save_vid or save_data_usb:
         if vid_path != save_path:  # new video
           vid_path = save_path
           if isinstance(vid_writer, cv2.VideoWriter):
@@ -336,26 +336,10 @@ def detect(opt):
             h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
           else:  # stream
             fps, w, h = 30, im0.shape[1], im0.shape[0]
-            save_path += '.mp4'
+            save_path += f"_{file_timestamp}.mp4"
 
           vid_writer = cv2.VideoWriter(
               save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-        vid_writer.write(im0)
-      if save_data_usb:
-        vid_path = f"/media/perceptron/DATALOG/video/{file_timestamp}"
-        save_path = vid_path
-        if isinstance(vid_writer, cv2.VideoWriter):
-          vid_writer.release()  # release previous video writer
-        if vid_cap:  # video
-          fps = vid_cap.get(cv2.CAP_PROP_FPS)
-          w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-          h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        else:  # stream
-          fps, w, h = 30, im0.shape[1], im0.shape[0]
-          save_path += '.mp4'
-
-        vid_writer = cv2.VideoWriter(
-            save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
         vid_writer.write(im0)
 
   if save_txt or save_vid:
