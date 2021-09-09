@@ -2,6 +2,7 @@ import sys
 sys.path.insert(0, './yolov5')
 
 import numpy as np
+import csv
 from datetime import datetime
 import sqlite3
 import torch.backends.cudnn as cudnn
@@ -122,6 +123,10 @@ def detect(opt):
   if save_data_usb:
     out = f"/media/perceptron/DATALOG/video"
     db_connection, db_cursor, file_timestamp = start_database('usb')
+    csv_path = f"{Path('/media/perceptron/DATALOG/csv')}/{file_timestamp}.csv"
+    with open(csv_path, 'w', encoding='UTF8') as f:
+      writer = csv.writer(f)
+      writer.writerow("frame, class, detections, count, datetime\n")
 
   # initialize deepsort
   cfg = get_config()
@@ -307,6 +312,10 @@ def detect(opt):
                 temp_bbox_left, temp_bbox_w, temp_bbox_h)
             )
             db_connection.commit()
+          if save_data_usb:
+            with open(csv_path, 'a', encoding='UTF8') as f:
+              writer = csv.writer(f)
+              writer.writerow(f"{frame_idx},{class_name},{class_detections},{current_count},{image_datetime}\n")
           print(f"Found {class_detections} {class_name} with count {current_count} \
             at {image_datetime} in frame {frame_idx}\
             {'s' * (class_detections > 1)}")
