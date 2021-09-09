@@ -1,4 +1,9 @@
+import sys
+sys.path.insert(0, './yolov5')
+
 import numpy as np
+from datetime import datetime
+import sqlite3
 import torch.backends.cudnn as cudnn
 import torch
 import cv2
@@ -10,16 +15,43 @@ import os
 import argparse
 from deep_sort_pytorch.deep_sort import DeepSort
 from deep_sort_pytorch.utils.parser import get_config
-from yolov5.utils.torch_utils import select_device, time_synchronized
+from yolov5.models.experimental import attempt_load
 from yolov5.utils.general import check_img_size, non_max_suppression, scale_coords, \
     check_imshow
+from yolov5.utils.torch_utils import select_device, time_synchronized
 from yolov5.utils.datasets import LoadImages, LoadStreams
-from yolov5.models.experimental import attempt_load
-import sys
-sys.path.insert(0, './yolov5')
 
 
 palette = (2 ** 11 - 1, 2 ** 15 - 1, 2 ** 20 - 1)
+
+
+def start_database(destiny):
+  file_timestamp = datetime.utcnow().strftime('%d-%m-%Y[%H-%M-%S]')
+  db_file = f"{file_timestamp}.db"
+  if destiny == 'local':
+    if not os.path.exists('database'):
+      os.makedirs('database')
+    db_path = os.path.join(os.getcwd(), "database", db_file)
+    
+  elif destiny == 'usb':
+    db_path = f"/media/perceptron/DATALOG/database/{db_file}"
+
+  db_connection = sqlite3.connect(db_path)
+  db_cursor = db_connection.cursor()
+  db_cursor.execute(
+      '''CREATE TABLE IF NOT EXISTS classifications (
+    frame INTEGER,
+    class TEXT,
+    detections INTEGER, 
+    count INTEGER,
+    date TEXT,
+    bbox_top INTEGER,
+    bbox_left INTEGER,
+    bbox_w INTEGER,
+    bbox_h INTEGER
+    )'''
+  )
+  return db_connection, db_cursor, file_timestamp
 
 
 def xyxy_to_xywh(*xyxy):
@@ -33,6 +65,7 @@ def xyxy_to_xywh(*xyxy):
   w = bbox_w
   h = bbox_h
   return x_c, y_c, w, h
+
 
 def xyxy_to_tlwh(bbox_xyxy):
   tlwh_bboxs = []
@@ -71,24 +104,34 @@ def draw_boxes(img, bbox, identities=None, offset=(0, 0)):
     cv2.rectangle(
         img, (x1, y1), (x1 + t_size[0] + 3, y1 + t_size[1] + 4), color, -1)
     cv2.putText(img, label, (x1, y1 +
-                             t_size[1] + 4), cv2.FONT_HERSHEY_PLAIN, 2, [255, 255, 255], 2)
+                t_size[1] + 4), cv2.FONT_HERSHEY_PLAIN, 2, [255, 255, 255], 2)
   return img
 
 
 def detect(opt):
-  out, source, weights, show_vid, save_vid, save_txt, imgsz, distance_th = \
-      opt.output, opt.source, opt.weights, opt.show_vid, opt.save_vid, opt.save_txt, opt.img_size, opt.distance
+  out, source, weights, save_local_db, save_data_usb, show_vid, save_vid, save_txt, imgsz, distance_th = \
+      opt.output, opt.source, opt.weights, opt.save_local_db, opt.save_data_usb, opt.show_vid, opt.save_vid, opt.save_txt, opt.img_size, opt.distance
   webcam = source == '0' or source.startswith(
       'rtsp') or source.startswith('http') or source.endswith('.txt')
+
+  # initialize db
+  # save_local_db = True
+  if save_local_db:
+    db_connection, db_cursor, file_timestamp = start_database('local')
+
+  if save_data_usb:
+    db_connection, db_cursor, file_timestamp = start_database('usb')
 
   # initialize deepsort
   cfg = get_config()
   cfg.merge_from_file(opt.config_deepsort)
-  deepsort = DeepSort(cfg.DEEPSORT.REID_CKPT,
-                      max_dist=cfg.DEEPSORT.MAX_DIST, min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE,
-                      nms_max_overlap=cfg.DEEPSORT.NMS_MAX_OVERLAP, max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
-                      max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET,
-                      use_cuda=True)
+  deepsort = DeepSort(
+      cfg.DEEPSORT.REID_CKPT,
+      max_dist=cfg.DEEPSORT.MAX_DIST, min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE,
+      nms_max_overlap=cfg.DEEPSORT.NMS_MAX_OVERLAP, max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
+      max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET,
+      use_cuda=True
+  )
 
   # Initialize
   device = select_device(opt.device)
@@ -139,7 +182,13 @@ def detect(opt):
   suma_pavo = False
   sort_list = np.zeros((2,))
   sort_idxs = np.zeros((2,), np.int32)
+
   for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
+    # Save datetime
+    # image_datetime = datetime.now()
+    # image_datetime = image_datetime.strftime("%d/%m/%Y %H:%M:%S")
+    image_datetime = datetime.utcnow().strftime('%d-%m-%Y %H:%M:%S.%f')[:-2]
+
     img = torch.from_numpy(img).to(device)
     img = img.half() if half else img.float()  # uint8 to fp16/32
     img /= 255.0  # 0 - 255 to 0.0 - 1.0
@@ -170,11 +219,6 @@ def detect(opt):
         det[:, :4] = scale_coords(
             img.shape[2:], det[:, :4], im0.shape).round()
 
-        # Print results
-        for c in det[:, -1].unique():
-          n = (det[:, -1] == c).sum()  # detections per class
-          s += '%g %ss, ' % (n, names[int(c)])  # add to string
-
         xywh_bboxs = []
         confs = []
 
@@ -192,6 +236,7 @@ def detect(opt):
         # pass detections to deepsort
         outputs = deepsort.update(xywhs, confss, im0)
 
+        tlwh_bboxs = [[]]
         # draw boxes for visualization
         if len(outputs) > 0:
           bbox_xyxy = outputs[:, :4]
@@ -228,17 +273,10 @@ def detect(opt):
                 #last_distance =  distance
 
                 last_center[0:1] = new_center[0:1]
-              # if j == 0:
-              #     new_idx = output[-1]
-              #
-              #     if (last_idx - new_idx) != 0:
-              #         Pavos_count+=1
-              #     last_idx = new_idx
-              # if j == (len(outputs)-1):
 
               with open(txt_path, 'a') as f:
-                f.write(('%g ' * 10 + '\n') % (frame_idx, identity, bbox_top,
-                                               bbox_left, bbox_w, bbox_h, -1, -1, -1, -1))  # label format
+                f.write(('%g ' * 10 + '\n') % (
+                    frame_idx, identity, bbox_top, bbox_left, bbox_w, bbox_h, -1, -1, -1, -1))  # label format
             if Pavos_count == 0:
               Pavos_count += (j+1)
 
@@ -248,17 +286,30 @@ def detect(opt):
             sort_list[pavo] = tlwh_bboxs[pavo][1]
           sort_idxs = np.argsort(sort_list)
 
-          print('sort', sort_list, sort_idxs, sort_idxs[-1])
-          # print(bbox_xyxy,bbox_xyxy.shape)
-          #
-          # for i in range(identities.shape[0]):
-          #     identities[i] = Pavos_count - (identities.shape[0] - (sort_idxs[i]+1))
-          #identities[i] = Pavos_count  - sort_idxs[i]
-
-          #draw_boxes(im0, bbox_xyxy, identities)
-          # if sort_idxs[-1] > bbox_xyxy[]
+          # print('sort', sort_list, sort_idxs, sort_idxs[-1])
           draw_boxes(im0, [bbox_xyxy[sort_idxs[-1], :]], [Pavos_count])
 
+        # Print results
+        for c in det[:, -1].unique():
+          class_name = names[int(c)]
+          class_detections = (det[:, -1] == c).sum()  # detections per class
+          current_count = Pavos_count if int(c) == 0 else -1
+          s += '%g %ss, ' % (class_detections, class_name)  # add to string
+          if save_local_db or save_data_usb:
+            temp_bbox_top = tlwh_bboxs[0][0] if tlwh_bboxs[0] else -1
+            temp_bbox_left = tlwh_bboxs[0][1] if tlwh_bboxs[0] else -1
+            temp_bbox_w = tlwh_bboxs[0][2] if tlwh_bboxs[0] else -1
+            temp_bbox_h = tlwh_bboxs[0][3] if tlwh_bboxs[0] else -1
+            db_cursor.execute(
+              "INSERT INTO classifications (frame, class, detections, count, date, bbox_top, bbox_left, bbox_w, bbox_h) VALUES (?, ?, ?, ?, ?, ?, ? ,? ,?)",
+              (int(frame_idx), str(class_name), int(class_detections),
+                int(current_count), str(image_datetime), temp_bbox_top, 
+                temp_bbox_left, temp_bbox_w, temp_bbox_h)
+            )
+            db_connection.commit()
+          print(f"Found {class_detections} {class_name} with count {current_count} \
+            at {image_datetime} in frame {frame_idx}\
+            {'s' * (class_detections > 1)}")
         print('Pavos: ', Pavos_count)
 
       else:
@@ -290,6 +341,22 @@ def detect(opt):
           vid_writer = cv2.VideoWriter(
               save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
         vid_writer.write(im0)
+      if save_data_usb:
+        vid_path = f"/media/perceptron/DATALOG/video/{file_timestamp}"
+        save_path = vid_path
+        if isinstance(vid_writer, cv2.VideoWriter):
+          vid_writer.release()  # release previous video writer
+        if vid_cap:  # video
+          fps = vid_cap.get(cv2.CAP_PROP_FPS)
+          w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+          h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        else:  # stream
+          fps, w, h = 30, im0.shape[1], im0.shape[0]
+          save_path += '.mp4'
+
+        vid_writer = cv2.VideoWriter(
+            save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+        vid_writer.write(im0)
 
   if save_txt or save_vid:
     print('Results saved to %s' % os.getcwd() + os.sep + out)
@@ -317,6 +384,10 @@ if __name__ == '__main__':
                       help='output video codec (verify ffmpeg support)')
   parser.add_argument('--device', default='',
                       help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+  parser.add_argument('--save-local-db', action='store_true',
+                      help='save data in sqlite3 db')
+  parser.add_argument('--save-data-usb', action='store_true',
+                      help='save data in mounted usb')
   parser.add_argument('--show-vid', action='store_true',
                       help='display tracking video results')
   parser.add_argument('--save-vid', action='store_true',
