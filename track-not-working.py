@@ -128,15 +128,19 @@ def detect(opt):
       writer = csv.writer(f)
       writer.writerow(["frame", "class", "detections", "count", "datetime"])
 
+  distances = distance_th.split("-")
+  distances = list(map(int, distances))
+  amount_of_classes = len(distances)
+
   # initialize deepsort
   cfg = get_config()
   cfg.merge_from_file(opt.config_deepsort)
   deepsort = DeepSort(
-      cfg.DEEPSORT.REID_CKPT,
-      max_dist=cfg.DEEPSORT.MAX_DIST, min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE,
-      nms_max_overlap=cfg.DEEPSORT.NMS_MAX_OVERLAP, max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
-      max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET,
-      use_cuda=True
+    cfg.DEEPSORT.REID_CKPT,
+    max_dist=cfg.DEEPSORT.MAX_DIST, min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE,
+    nms_max_overlap=cfg.DEEPSORT.NMS_MAX_OVERLAP, max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
+    max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET,
+    use_cuda=True
   )
 
   # Initialize
@@ -169,6 +173,8 @@ def detect(opt):
 
   # Get names and colors
   names = model.module.names if hasattr(model, 'module') else model.names
+  for name_id in range(7):
+    print(f"Clase {name_id} = {names[int(name_id)]}")
 
   # Run inference
   if device.type != 'cpu':
@@ -179,15 +185,12 @@ def detect(opt):
   save_path = str(Path(out))
   txt_path = str(Path(out)) + '/results.txt'
 
-  last_idx = 1
-  Pavos_count = 0
-  last_center = np.zeros((2,))
-  new_center = np.zeros((2,))
-  last_distance = 0
-  primer_pavo = True
-  suma_pavo = False
-  sort_list = np.zeros((2,))
-  sort_idxs = np.zeros((2,), np.int32)
+  classes_count = [0] * amount_of_classes
+  last_center = np.zeros((2,amount_of_classes))
+  new_center = np.zeros((2,amount_of_classes))
+  first_class_detection = [True] * amount_of_classes
+  sort_list = np.zeros((2,amount_of_classes))
+  sort_idxs = np.zeros((2,amount_of_classes), np.int32)
 
   for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
     # img = np.array([np.fliplr(img[i]) for i in range(3)])
@@ -207,7 +210,7 @@ def detect(opt):
 
     # Apply NMS
     pred = non_max_suppression(
-        pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+      pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
     t2 = time_synchronized()
 
     # Process detections
@@ -246,7 +249,6 @@ def detect(opt):
         if len(outputs) > 0:
           bbox_xyxy = outputs[:, :4]
           identities = outputs[:, -1]
-
           # to MOT format
           tlwh_bboxs = xyxy_to_tlwh(bbox_xyxy)
 
@@ -254,51 +256,50 @@ def detect(opt):
 
           # print(outputs[-1])
           for j, (tlwh_bbox, output) in enumerate(zip(tlwh_bboxs, outputs)):
+            print(f"{j} --- {outputs}")
+            print(f"{j} --- {outputs}")
+            print(f"{j} --- {outputs}")
+            print(f"{j} --- {outputs}")
+            print(f"{j} --- {outputs}")
             bbox_top = tlwh_bbox[0]
             bbox_left = tlwh_bbox[1]
             bbox_w = tlwh_bbox[2]
             bbox_h = tlwh_bbox[3]
             identity = output[-1]
 
-            if j == 0:
-              new_center[0:1] = tlwh_bbox[0:1]
-              if primer_pavo:
-                last_center[0:1] = tlwh_bbox[0:1]
-                primer_pavo = False
-              # print(f"Last - new center = {last_center-new_center}")
-              distance = np.linalg.norm(last_center-new_center)
-              #D = np.abs(last_distance - distance)
-              print('Distance', distance)
-              if distance > distance_th:
-                Pavos_count += 1
-                suma_pavo = True
-              if len(tlwh_bboxs) < 2:
-                suma_pavo = False
-              #last_distance =  distance
+            # if j == 0:                        # j == 0 -> Clase 0
+            new_center[0:1, identity] = tlwh_bbox[0:1]
+            if first_class_detection[identity]:
+              last_center[0:1, identity] = tlwh_bbox[0:1]
+              first_class_detection[identity] = False
+            # print(f"Last - new center = {last_center-new_center}")
+            distance = np.linalg.norm(last_center[:,identity]-new_center[:,identity])
+            print('Distance', distance)
+            if distance > distances[identity]:
+              classes_count[identity] += 1
 
-              last_center[0:1] = new_center[0:1]
+            last_center[0:1,identity] = new_center[0:1,identity]
 
             if save_txt:
               with open(txt_path, 'a') as f:
                 f.write(('%g ' * 10 + '\n') % (
-                    frame_idx, identity, bbox_top, bbox_left, bbox_w, bbox_h, -1, -1, -1, -1))  # label format
-          if Pavos_count == 0:
-            Pavos_count += (j+1)
+                    frame_idx, identity+1, bbox_top, bbox_left, bbox_w, bbox_h, -1, -1, -1, -1))  # label format
+            if classes_count[identity] == 0:       # Le agregué un tab
+              classes_count[identity] += (j+1)
 
-          # if suma_pavo:
           sort_list = np.zeros(len(tlwh_bboxs))
           for pavo in range(len(tlwh_bboxs)):
             sort_list[pavo] = tlwh_bboxs[pavo][1]
           sort_idxs = np.argsort(sort_list)
 
           # print('sort', sort_list, sort_idxs, sort_idxs[-1])
-          draw_boxes(im0, [bbox_xyxy[sort_idxs[-1], :]], [Pavos_count])
+          draw_boxes(im0, bbox_xyxy, identities)
 
         # Print results
         for c in det[:, -1].unique():
           class_name = names[int(c)]
           class_detections = (det[:, -1] == c).sum()  # detections per class
-          current_count = Pavos_count if int(c) == 0 else -1
+          current_count = classes_count[int(c)]
           s += '%g %ss, ' % (class_detections, class_name)  # add to string
           if save_local_db or save_data_usb:
             temp_bbox_top = tlwh_bboxs[0][0] if tlwh_bboxs[0] else -1
@@ -319,7 +320,7 @@ def detect(opt):
           print(f"Found {class_detections} {class_name} with count {current_count} \
             at {image_datetime} in frame {frame_idx}\
             {'s' * (class_detections > 1)}")
-        print('Pavos: ', Pavos_count)
+        print('Cuentas: ', classes_count)
 
       else:
         deepsort.increment_ages()
@@ -396,7 +397,7 @@ if __name__ == '__main__':
                       help='augmented inference')
   parser.add_argument("--config_deepsort", type=str,
                       default="deep_sort_pytorch/configs/deep_sort.yaml")
-  parser.add_argument('--distance', type=int, default=50,
+  parser.add_argument('--distance', type=str, default=40,
                       help='distance between class 0 object (pixels)')
   args = parser.parse_args()
   args.img_size = check_img_size(args.img_size)
