@@ -95,6 +95,31 @@ sudo -H pip3 install . -v
 ```
 
 ## Instalar otras librerías
-````bash
+```bash
 sudo -H pip3 install seaborn
+sudo -H pip3 install easydict
+```
+
+## Configurar ejecución del código en boot
+
+### Crear nuevo user y nuevo group del sistema, no para uso del usuario.
+```bash
+sudo addgroup --system yolo
+sudo adduser --system --no-create-home --disabled-login --disabled-password --ingroup yolo yolo
+```
+
+### Revisar los groups que existen
+```bash
+groups
+```
+
+### Agregar grupos necesarios
+```bash
+sudo adduser yolo video
+sudo adduser yolo perceptron
+```
+
+### Hacer que script de startup corra en root
+````bash
+sudo chmod +s start_on_boot_script.sh
 ```
