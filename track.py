@@ -317,7 +317,7 @@ def detect(opt):
           if save_data_usb:
             with open(csv_path, 'a', encoding='UTF8') as f:
               writer = csv.writer(f)
-              writer.writerow([frame_idx, class_name, class_detections, current_count, image_datetime])
+              writer.writerow([int(frame_idx), str(class_name), int(class_detections), int(current_count), str(image_datetime)])
           print(f"Found {class_detections} {class_name} with count {current_count} \
             at {image_datetime} in frame {frame_idx}\
             {'s' * (class_detections > 1)}")
