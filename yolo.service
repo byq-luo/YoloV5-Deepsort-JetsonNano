@@ -1,0 +1,12 @@
+[Unit]
+After=network.target
+Description="YoloV5 Service"
+[Service]
+Restart=on-failure
+RestartSec=5s
+WorkingDirectory=/home/perceptron/Projects/YoloV5-Deepsort-JetsonNano
+ExecStart=/usr/bin/python3 ./track.py --source 0 --weights /yolov5/weights/yolov5s_7C.pt --distance 40 --save-data-usb
+User=yolo
+[Install]
+WantedBy=multi-user.target
+
