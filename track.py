@@ -117,9 +117,11 @@ def detect(opt):
 
   # initialize db
   # save_local_db = True
+  save_local_db = False
   if save_local_db:
     db_connection, db_cursor, file_timestamp = start_database('local')
 
+  save_data_usb = True
   if save_data_usb:
     out = f"/media/perceptron/DATALOG/video"
     db_connection, db_cursor, file_timestamp = start_database('usb')
